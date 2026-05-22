@@ -176,12 +176,69 @@ Format:
  */
 export const evaluateInterviewWithAI = async (interviewData, answers) => {
   const prompt = `
-Return ONLY JSON.
+You are an expert interviewer. Your task is to evaluate the candidate's performance in this interview and generate a comprehensive diagnostic report.
 
-Evaluate interview.
+Interview Context:
+- Role: ${interviewData.role}
+- Difficulty: ${interviewData.difficulty}
+- Focus Areas: ${interviewData.focusAreas}
 
-Interview: ${JSON.stringify(interviewData)}
-Answers: ${JSON.stringify(answers)}
+Questions & Answers to evaluate:
+${answers.map((ans, idx) => `
+Question ${idx + 1}: ${ans.question?.questionText || 'N/A'}
+Category: ${ans.question?.category || 'General'}
+Suggested Answer: ${ans.question?.suggestedAnswer || 'N/A'}
+Candidate's Answer: ${ans.answerText || 'N/A'}
+Code Snippet: ${ans.codeSnippet || 'N/A'}
+`).join('\n')}
+
+STRICT RULES:
+1. Return ONLY a valid JSON object matching the format below.
+2. The overallScore must be an integer between 0 and 100 representing the candidate's overall average performance.
+3. The grade must be assigned based on the overallScore:
+   - 95-100: "A+"
+   - 90-94: "A"
+   - 85-89: "B+"
+   - 80-84: "B"
+   - 70-79: "C+"
+   - 60-69: "C"
+   - 50-59: "D"
+   - Below 50: "F"
+4. The summary MUST be a detailed, encouraging, and clear paragraph (at least 3-4 sentences) summarizing the candidate's performance, communication style, and logical approach. It MUST NOT be empty or missing.
+5. The strengths MUST be an array of 2 to 3 detailed strings highlighting what the candidate did well.
+6. The weaknesses MUST be an array of 2 to 3 detailed strings highlighting specific areas for improvement.
+7. The hiringRecommendation MUST be exactly one of: "Strongly Recommend", "Recommend", "Neutral", "Not Recommended".
+8. The roadmap30Days MUST be an array of exactly 3 strings representing a 30-day mastery plan (Day 1-10 focus, Day 11-20 focus, Day 21-30 focus).
+9. The questionWiseFeedback MUST be an array matching the candidate's answers, where each item contains:
+   - questionText: The text of the question.
+   - category: The category of the question.
+   - answerScore: An integer between 0 and 100 for this specific answer's quality.
+   - feedback: Clear, constructive mentor feedback about the answer.
+   - suggestedImprovement: Next-level advice on how to improve this answer.
+
+Expected Output Format:
+{
+  "overallScore": 85,
+  "grade": "B+",
+  "summary": "The candidate demonstrated solid technical and communication skills...",
+  "strengths": ["Strong understanding of fundamental JS concepts...", "Clear and structured behavioral communication..."],
+  "weaknesses": ["Needs to practice optimizing time complexity...", "Should explain design patterns more thoroughly..."],
+  "hiringRecommendation": "Recommend",
+  "roadmap30Days": [
+    "Focus on deep understanding of advanced algorithms and data structures.",
+    "Practice coding challenges daily focusing on runtime complexity.",
+    "Refine communication and behavioral scenarios using the STAR method."
+  ],
+  "questionWiseFeedback": [
+    {
+      "questionText": "...",
+      "category": "...",
+      "answerScore": 80,
+      "feedback": "...",
+      "suggestedImprovement": "..."
+    }
+  ]
+}
 `;
 
   const content = await callWithRetry(prompt);

@@ -19,7 +19,7 @@ const reportSchema = new mongoose.Schema({
     },
     grade: {
         type: String,
-        enum: ['A', 'B', 'C', 'D', 'F'],
+        enum: ['A+', 'A', 'B+', 'B', 'C+', 'C', 'D', 'F'],
     },
     summary: String,
     strengths: [String],
