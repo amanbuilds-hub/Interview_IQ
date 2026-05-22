@@ -11,6 +11,7 @@ export default function InterviewSetup() {
     const [selectedResume, setSelectedResume] = useState('');
     const [role, setRole] = useState('');
     const [difficulty, setDifficulty] = useState('Intermediate');
+    const [questionCount, setQuestionCount] = useState(5);
     const [focusAreas, setFocusAreas] = useState('');
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
@@ -42,6 +43,7 @@ export default function InterviewSetup() {
                 resumeId: selectedResume,
                 role,
                 difficulty,
+                questionCount,
                 focusAreas: focusAreas.split(',').map(s => s.trim()).filter(Boolean)
             });
             toast.success('Interview questions generated!');
@@ -125,6 +127,24 @@ export default function InterviewSetup() {
                                 onChange={(e) => setFocusAreas(e.target.value)}
                             />
                         </div>
+                    </div>
+
+                    {/* Question Count */}
+                    <div className="space-y-3">
+                        <label className="text-sm font-medium text-white/60 ml-1 flex items-center gap-2">
+                            <Settings2 className="w-4 h-4 text-indigo-400" /> Number of Questions
+                        </label>
+                        <select
+                            className="input-field appearance-none bg-black/20"
+                            value={questionCount}
+                            onChange={(e) => setQuestionCount(Number(e.target.value))}
+                        >
+                            {[...Array(15)].map((_, i) => (
+                                <option key={i + 1} value={i + 1} className="bg-zinc-900">
+                                    {i + 1} {i + 1 === 1 ? 'Question' : 'Questions'}
+                                </option>
+                            ))}
+                        </select>
                     </div>
 
                     <button

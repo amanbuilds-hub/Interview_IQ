@@ -59,7 +59,7 @@ export default function ReportScreen() {
 
     const generatePDF = (element) => {
         const clonedElement = element.cloneNode(true);
-        
+
         // Hide it off-screen but keep it in the DOM tree so html2canvas can measure styles
         clonedElement.style.position = 'absolute';
         clonedElement.style.left = '-9999px';
@@ -69,7 +69,7 @@ export default function ReportScreen() {
         clonedElement.style.background = '#09090b';
         clonedElement.style.color = '#ffffff';
         document.body.appendChild(clonedElement);
-        
+
         // Add header to clone
         const pdfHeader = document.createElement('div');
         pdfHeader.style.borderBottom = '1px solid rgba(255, 255, 255, 0.15)';
@@ -103,18 +103,18 @@ export default function ReportScreen() {
 
                 const imgData = canvas.toDataURL('image/jpeg', 0.95);
                 const pdf = new jsPDF('p', 'in', 'letter');
-                
+
                 // standard page dimensions in inches
                 const pageWidth = 8.5;
                 const pageHeight = 11.0;
                 const margin = 0.4;
-                
+
                 const printableWidth = pageWidth - (margin * 2); // 7.7 inches
                 const printableHeight = pageHeight - (margin * 2); // 10.2 inches
-                
+
                 const imgWidth = printableWidth;
                 const imgHeight = (canvas.height * imgWidth) / canvas.width;
-                
+
                 if (imgHeight <= printableHeight) {
                     pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, imgHeight);
                 } else {
@@ -122,10 +122,10 @@ export default function ReportScreen() {
                     let heightLeft = imgHeight;
                     let position = 0;
                     let page = 1;
-                    
+
                     pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, imgHeight);
                     heightLeft -= printableHeight;
-                    
+
                     while (heightLeft > 0) {
                         position = -(printableHeight * page) + margin;
                         pdf.addPage();
@@ -134,7 +134,7 @@ export default function ReportScreen() {
                         page++;
                     }
                 }
-                
+
                 pdf.save(`InterviewIQ_Report_${interviewId}.pdf`);
             } catch (err) {
                 console.error("PDF Generation failed:", err);
@@ -265,7 +265,7 @@ export default function ReportScreen() {
                 >
                     <div className="flex items-center gap-3 mb-10">
                         <TrendingUp className="w-7 h-7 text-indigo-400" />
-                        <h3 className="text-3xl font-bold">Your 30-Day Mastery Plan</h3>
+                        <h3 className="text-3xl font-bold">Mastery Plan</h3>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
                         {report.roadmap30Days && report.roadmap30Days.length > 0 ? (
@@ -288,33 +288,64 @@ export default function ReportScreen() {
                 {/* Question Breakdown */}
                 <section className="mb-20">
                     <h3 className="text-2xl font-bold mb-8 pl-4">Question Breakdown</h3>
-                    <div className="space-y-6">
+                    <div className="space-y-12">
                         {report.questionWiseFeedback && report.questionWiseFeedback.length > 0 ? (
                             report.questionWiseFeedback.map((q, i) => (
                                 <motion.div
                                     key={i}
                                     whileHover={{ scale: 1.01 }}
-                                    className="glass p-8 rounded-[2.5rem] border hover:border-indigo-500/20 transition-all"
+                                    className="glass p-10 rounded-[3rem] border hover:border-indigo-500/30 transition-all"
                                 >
-                                    <div className="flex flex-col md:flex-row gap-6">
-                                        <div className="flex-1">
-                                            <h4 className="text-xl font-bold mb-4">{q.questionText}</h4>
-                                            <div className="flex gap-4 items-center mb-6">
-                                                <span className="bg-white/5 py-1 px-3 rounded-lg text-xs font-bold uppercase tracking-wider">{q.category}</span>
-                                                <div className="h-1.5 w-1.5 rounded-full bg-white/20" />
-                                                <span className={(q.answerScore || 0) >= 70 ? 'text-green-400 font-bold' : 'text-yellow-400 font-bold'}>{q.answerScore || 0}% Fit</span>
-                                            </div>
-                                            <div className="p-6 bg-white/5 rounded-2xl flex gap-4">
-                                                <BookOpen className="w-6 h-6 text-indigo-400 shrink-0" />
-                                                <div>
-                                                    <p className="font-bold text-sm mb-2">Mentor Feedback</p>
-                                                    <p className="text-white/50 leading-relaxed font-light italic">{q.feedback || 'No feedback provided.'}</p>
-                                                </div>
+                                    <div className="mb-10">
+                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                                            <h4 className="text-2xl font-bold leading-tight max-w-2xl">{q.questionText}</h4>
+                                            <div className="flex gap-4 items-center shrink-0">
+                                                <span className="bg-white/5 py-1.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider border border-white/10">{q.category}</span>
+                                                <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                                                <span className={`text-lg font-bold ${(q.answerScore || 0) >= 70 ? 'text-green-400' : 'text-yellow-400'}`}>{q.answerScore || 0}% Fit</span>
                                             </div>
                                         </div>
-                                        <div className="md:w-72 p-6 bg-indigo-500/5 rounded-2xl border border-indigo-500/10">
-                                            <p className="font-bold text-sm mb-4 flex items-center gap-2 text-indigo-400"><Award className="w-4 h-4" /> Next Level Advice</p>
-                                            <p className="text-sm text-white/50 leading-relaxed font-light">{q.suggestedImprovement || 'No improvement suggested.'}</p>
+
+                                        {/* Answer Comparison Grid */}
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+                                            <div className="p-8 bg-white/5 rounded-[2rem] border border-white/5 relative overflow-hidden group">
+                                                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                                    <Target className="w-12 h-12" />
+                                                </div>
+                                                <p className="text-indigo-400 font-bold text-xs uppercase tracking-widest mb-4">Your Answer</p>
+                                                <p className="text-white/70 leading-relaxed font-light italic">
+                                                    {q.userAnswer || "No answer recorded."}
+                                                </p>
+                                            </div>
+                                            <div className="p-8 bg-indigo-500/5 rounded-[2rem] border border-indigo-500/10 relative overflow-hidden group">
+                                                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                                    <CheckCircle2 className="w-12 h-12" />
+                                                </div>
+                                                <p className="text-indigo-400 font-bold text-xs uppercase tracking-widest mb-4">Ideal Answer</p>
+                                                <p className="text-white/70 leading-relaxed font-light italic">
+                                                    {q.suggestedAnswer || "No ideal answer available."}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-col md:flex-row gap-8">
+                                            <div className="flex-1 p-8 bg-white/5 rounded-[2rem] flex gap-6">
+                                                <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 flex items-center justify-center shrink-0">
+                                                    <BookOpen className="w-6 h-6 text-indigo-400" />
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-sm mb-2 text-white/90">Mentor Feedback</p>
+                                                    <p className="text-white/50 leading-relaxed font-light">{q.feedback || 'No feedback provided.'}</p>
+                                                </div>
+                                            </div>
+                                            <div className="md:w-80 p-8 bg-indigo-500/10 rounded-[2rem] border border-indigo-500/20">
+                                                <p className="font-bold text-sm mb-4 flex items-center gap-2 text-indigo-400">
+                                                    <Award className="w-5 h-5" /> Next Level Advice
+                                                </p>
+                                                <p className="text-sm text-white/50 leading-relaxed font-light italic">
+                                                    "{q.suggestedImprovement || 'No improvement suggested.'}"
+                                                </p>
+                                            </div>
                                         </div>
                                     </div>
                                 </motion.div>

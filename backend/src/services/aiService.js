@@ -1,29 +1,58 @@
 import dotenv from 'dotenv';
+import Groq from 'groq-sdk';
 dotenv.config();
 
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const GROQ_MODEL = process.env.GROQ_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct";
+
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const API_KEY = process.env.OPENROUTER_API_KEY;
-const MODEL = "google/gemma-3-12b-it";
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const OPENROUTER_MODEL = "google/gemma-3-12b-it";
 
 /**
  * 🧠 Safe JSON Parser
  */
-const safeParseJSON = (text) => {
+const safeParseJSON = (text, expectedType = 'object') => {
   try {
+    // 1. Remove markdown backticks
     let cleaned = text.replace(/```json|```/g, "").trim();
-
+    
+    // 2. Extract first valid JSON block
     const match = cleaned.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-    if (!match) throw new Error("No JSON found");
-
+    if (!match) throw new Error("No JSON found in response");
+    
     let jsonStr = match[0];
+    
+    // 3. Fix common AI JSON errors
+    jsonStr = jsonStr.replace(/,\s*([\]}])/g, "$1"); // Trailing commas
+    
+    let parsed = JSON.parse(jsonStr);
 
-    // Remove trailing commas
-    jsonStr = jsonStr.replace(/,\s*([\]}])/g, "$1");
+    // 4. Force unwrap for Array expectations
+    if (expectedType === 'array') {
+      if (Array.isArray(parsed)) return parsed;
+      
+      // If it's an object, look for the first array field
+      const arrayKey = Object.keys(parsed).find(key => Array.isArray(parsed[key]));
+      if (arrayKey) return parsed[arrayKey];
+      
+      throw new Error("AI returned an object but no array field was found inside.");
+    }
 
-    return JSON.parse(jsonStr);
+    // 5. Force unwrap for Object expectations
+    if (expectedType === 'object' && !Array.isArray(parsed)) {
+      const keys = Object.keys(parsed);
+      // If it's a single-key wrapper (e.g., {"report": {...}}), unwrap it
+      if (keys.length === 1 && typeof parsed[keys[0]] === 'object' && !Array.isArray(parsed[keys[0]])) {
+        return parsed[keys[0]];
+      }
+    }
+
+    return parsed;
   } catch (err) {
-    console.error("❌ JSON Parse Error:", text);
-    throw new Error("Invalid AI JSON: " + err.message);
+    console.error("❌ AI JSON Error:", err.message);
+    console.error("📄 RAW RESPONSE (first 200 chars):", text.slice(0, 200));
+    throw new Error(`AI data error: ${err.message}`);
   }
 };
 
@@ -33,15 +62,12 @@ const safeParseJSON = (text) => {
 export const parseResumeWithAI = async (text) => {
   const prompt = `
 Extract key information from this resume text.
-
-STRICT RULES:
-- Return ONLY JSON object
-- Fields: skills (array), projects (array), experience (array), education (array)
+STRICT RULE: Return a JSON object with these keys: skills, projects, experience, education.
 
 Resume Text:
 ${text}
 
-Format:
+Output Format:
 {
   "skills": ["..."],
   "projects": ["..."],
@@ -51,7 +77,7 @@ Format:
 `;
 
   const content = await callWithRetry(prompt);
-  return safeParseJSON(content);
+  return safeParseJSON(content, 'object');
 };
 
 /**
@@ -85,14 +111,41 @@ const normalizeQuestion = (q) => {
  */
 const callWithRetry = async (prompt, retries = 2) => {
   try {
-    return await callOpenRouter(prompt);
+    return await callGroq(prompt);
   } catch (err) {
-    if (retries > 0) {
-      console.warn("🔁 Retrying AI...");
-      return callWithRetry(prompt, retries - 1);
+    try {
+      return await callOpenRouter(prompt);
+    } catch (fallbackErr) {
+      if (retries > 0) {
+        return callWithRetry(prompt, retries - 1);
+      }
+      throw fallbackErr;
     }
-    throw err;
   }
+};
+
+/**
+ * 🏎️ Groq Call
+ */
+const callGroq = async (prompt) => {
+  const completion = await groq.chat.completions.create({
+    model: GROQ_MODEL,
+    messages: [
+      {
+        role: "system",
+        content: "You are a professional technical recruiter. Return ONLY valid JSON objects. Do not include markdown or explanations. Ensure all keys match the requested schema perfectly."
+      },
+      {
+        role: "user",
+        content: prompt
+      }
+    ],
+    temperature: 0.1,
+    max_tokens: 4096,
+    response_format: { type: "json_object" }
+  });
+
+  return completion.choices[0]?.message?.content || "";
 };
 
 /**
@@ -102,16 +155,16 @@ const callOpenRouter = async (prompt) => {
   const response = await fetch(OPENROUTER_URL, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${API_KEY}`,
+      "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: MODEL,
+      model: OPENROUTER_MODEL,
       temperature: 0,
       messages: [
         {
           role: "system",
-          content: "Return ONLY valid JSON. No markdown. No explanation. category MUST be exactly one of: General, Technical, Behavioral, Resume-based, Scenario-based, Coding. difficulty MUST be exactly one of: Beginner, Intermediate, Advanced."
+          content: "Return ONLY valid JSON. No markdown. No explanation."
         },
         {
           role: "user",
@@ -133,42 +186,37 @@ const callOpenRouter = async (prompt) => {
 /**
  * 🎯 Generate Questions
  */
-export const generateQuestionsWithAI = async (resumeData, role, difficulty, focusAreas) => {
+export const generateQuestionsWithAI = async (resumeData, role, difficulty, focusAreas, questionCount = 5) => {
   const prompt = `
-Generate 5 interview questions.
-
-STRICT RULES:
-- Return ONLY JSON array
-- category MUST be EXACTLY one of these values: General, Technical, Behavioral, Resume-based, Scenario-based, Coding
-- difficulty MUST be EXACTLY one of these values: Beginner, Intermediate, Advanced
+Generate ${questionCount} interview questions for a ${role} position.
+STRICT RULE: Return a JSON object with a "questions" key containing an array of ${questionCount} objects.
 
 Context:
-Role: ${role}
 Difficulty: ${difficulty}
 Focus: ${focusAreas}
 Resume: ${JSON.stringify(resumeData)}
 
-Format:
-[
-  {
-    "questionText": "...",
-    "category": "Technical",
-    "difficulty": "Intermediate",
-    "suggestedAnswer": "..."
-  }
-]
+Output Format:
+{
+  "questions": [
+    {
+      "questionText": "...",
+      "category": "Technical",
+      "difficulty": "Intermediate",
+      "suggestedAnswer": "..."
+    }
+  ]
+}
 `;
 
   const content = await callWithRetry(prompt);
-  const parsed = safeParseJSON(content);
+  const parsed = safeParseJSON(content, 'array');
 
-  console.log("🧠 RAW AI:", parsed);
+  if (!Array.isArray(parsed)) {
+    throw new Error("Expected an array of questions but didn't receive one.");
+  }
 
-  const normalized = parsed.map(normalizeQuestion);
-
-  console.log("✅ NORMALIZED:", normalized);
-
-  return normalized;
+  return parsed.map(normalizeQuestion);
 };
 
 /**
@@ -176,59 +224,28 @@ Format:
  */
 export const evaluateInterviewWithAI = async (interviewData, answers) => {
   const prompt = `
-You are an expert interviewer. Your task is to evaluate the candidate's performance in this interview and generate a comprehensive diagnostic report.
+Evaluate the candidate's interview performance.
+STRICT RULE: Return a JSON object with the following schema.
 
 Interview Context:
 - Role: ${interviewData.role}
 - Difficulty: ${interviewData.difficulty}
-- Focus Areas: ${interviewData.focusAreas}
 
-Questions & Answers to evaluate:
+Answers to evaluate:
 ${answers.map((ans, idx) => `
-Question ${idx + 1}: ${ans.question?.questionText || 'N/A'}
-Category: ${ans.question?.category || 'General'}
-Suggested Answer: ${ans.question?.suggestedAnswer || 'N/A'}
-Candidate's Answer: ${ans.answerText || 'N/A'}
-Code Snippet: ${ans.codeSnippet || 'N/A'}
+Q${idx + 1}: ${ans.question?.questionText}
+Candidate: ${ans.answerText}
 `).join('\n')}
 
-STRICT RULES:
-1. Return ONLY a valid JSON object matching the format below.
-2. The overallScore must be an integer between 0 and 100 representing the candidate's overall average performance.
-3. The grade must be assigned based on the overallScore:
-   - 95-100: "A+"
-   - 90-94: "A"
-   - 85-89: "B+"
-   - 80-84: "B"
-   - 70-79: "C+"
-   - 60-69: "C"
-   - 50-59: "D"
-   - Below 50: "F"
-4. The summary MUST be a detailed, encouraging, and clear paragraph (at least 3-4 sentences) summarizing the candidate's performance, communication style, and logical approach. It MUST NOT be empty or missing.
-5. The strengths MUST be an array of 2 to 3 detailed strings highlighting what the candidate did well.
-6. The weaknesses MUST be an array of 2 to 3 detailed strings highlighting specific areas for improvement.
-7. The hiringRecommendation MUST be exactly one of: "Strongly Recommend", "Recommend", "Neutral", "Not Recommended".
-8. The roadmap30Days MUST be an array of exactly 3 strings representing a 30-day mastery plan (Day 1-10 focus, Day 11-20 focus, Day 21-30 focus).
-9. The questionWiseFeedback MUST be an array matching the candidate's answers, where each item contains:
-   - questionText: The text of the question.
-   - category: The category of the question.
-   - answerScore: An integer between 0 and 100 for this specific answer's quality.
-   - feedback: Clear, constructive mentor feedback about the answer.
-   - suggestedImprovement: Next-level advice on how to improve this answer.
-
-Expected Output Format:
+Output Format:
 {
   "overallScore": 85,
   "grade": "B+",
-  "summary": "The candidate demonstrated solid technical and communication skills...",
-  "strengths": ["Strong understanding of fundamental JS concepts...", "Clear and structured behavioral communication..."],
-  "weaknesses": ["Needs to practice optimizing time complexity...", "Should explain design patterns more thoroughly..."],
+  "summary": "...",
+  "strengths": ["...", "..."],
+  "weaknesses": ["...", "..."],
   "hiringRecommendation": "Recommend",
-  "roadmap30Days": [
-    "Focus on deep understanding of advanced algorithms and data structures.",
-    "Practice coding challenges daily focusing on runtime complexity.",
-    "Refine communication and behavioral scenarios using the STAR method."
-  ],
+  "roadmap30Days": ["...", "...", "..."],
   "questionWiseFeedback": [
     {
       "questionText": "...",
@@ -242,5 +259,64 @@ Expected Output Format:
 `;
 
   const content = await callWithRetry(prompt);
-  return safeParseJSON(content);
+  const evaluation = safeParseJSON(content, 'object');
+
+  // Ensure questionWiseFeedback exists even if AI misnames it
+  if (!evaluation.questionWiseFeedback) {
+    const feedbackKey = Object.keys(evaluation).find(key => Array.isArray(evaluation[key]));
+    if (feedbackKey) {
+      evaluation.questionWiseFeedback = evaluation[feedbackKey];
+    } else {
+      evaluation.questionWiseFeedback = [];
+    }
+  }
+
+  // Defensive field normalization
+  evaluation.overallScore = Math.round(Number(evaluation.overallScore)) || 0;
+  if (evaluation.overallScore < 0) evaluation.overallScore = 0;
+  if (evaluation.overallScore > 100) evaluation.overallScore = 100;
+
+  evaluation.grade = getValidGrade(evaluation.grade, evaluation.overallScore);
+  evaluation.hiringRecommendation = getValidRecommendation(evaluation.hiringRecommendation);
+
+  return evaluation;
+};
+
+const getValidGrade = (grade, score) => {
+  const allowed = ['A+', 'A', 'B+', 'B', 'C+', 'C', 'D', 'F'];
+  
+  if (allowed.includes(grade)) return grade;
+  
+  if (grade) {
+    const clean = grade.trim().toUpperCase();
+    if (clean === 'A-') return 'A';
+    if (clean === 'B-') return 'B';
+    if (clean === 'C-') return 'C';
+    if (clean === 'D-') return 'D';
+    if (allowed.includes(clean)) return clean;
+  }
+  
+  // Fallback to calculating grade from score
+  if (score >= 90) return 'A+';
+  if (score >= 85) return 'A';
+  if (score >= 80) return 'B+';
+  if (score >= 70) return 'B';
+  if (score >= 60) return 'C+';
+  if (score >= 50) return 'C';
+  if (score >= 40) return 'D';
+  return 'F';
+};
+
+const getValidRecommendation = (recommendation) => {
+  const allowed = ['Strongly Recommend', 'Recommend', 'Neutral', 'Not Recommended'];
+  if (allowed.includes(recommendation)) return recommendation;
+  
+  if (recommendation) {
+    const clean = recommendation.trim().toLowerCase();
+    if (clean.includes('strongly') && clean.includes('recommend')) return 'Strongly Recommend';
+    if (clean.includes('not') && clean.includes('recommend')) return 'Not Recommended';
+    if (clean.includes('recommend')) return 'Recommend';
+    if (clean.includes('neutral')) return 'Neutral';
+  }
+  return 'Recommend';
 };

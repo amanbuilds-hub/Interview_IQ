@@ -28,6 +28,8 @@ const reportSchema = new mongoose.Schema({
         questionText: String,
         category: String,
         answerScore: Number,
+        userAnswer: String,
+        suggestedAnswer: String,
         feedback: String,
         suggestedImprovement: String,
     }],

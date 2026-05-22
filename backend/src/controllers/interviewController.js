@@ -7,7 +7,7 @@ import { generateQuestionsWithAI, evaluateInterviewWithAI } from '../services/ai
 
 export const generateInterview = async (req, res, next) => {
   try {
-    const { resumeId, role, difficulty, focusAreas } = req.body;
+    const { resumeId, role, difficulty, focusAreas, questionCount = 5 } = req.body;
 
     const resume = await Resume.findById(resumeId);
     if (!resume) {
@@ -18,7 +18,8 @@ export const generateInterview = async (req, res, next) => {
       resume.parsedData,
       role,
       difficulty,
-      focusAreas
+      focusAreas,
+      questionCount
     );
 
     console.log("📦 FINAL QUESTIONS:", aiQuestions);
@@ -70,6 +71,7 @@ export const getMyInterviews = async (req, res, next) => {
   try {
     const interviews = await Interview.find({ user: req.user.id })
       .populate('questions')
+      .populate('report')
       .sort('-createdAt');
     res.status(200).json({ success: true, count: interviews.length, data: interviews });
   } catch (error) {
@@ -135,6 +137,16 @@ export const finalizeInterview = async (req, res, next) => {
 
     // Call AI to evaluate
     const evaluation = await evaluateInterviewWithAI(interview, answers);
+    console.log("📊 Evaluation Received:", JSON.stringify(evaluation, null, 2));
+
+    // Map user answers and suggested answers to feedback
+    const enrichedFeedback = evaluation.questionWiseFeedback.map((fb, index) => ({
+      ...fb,
+      userAnswer: answers[index]?.answerText || "N/A",
+      suggestedAnswer: answers[index]?.question?.suggestedAnswer || "N/A"
+    }));
+
+    console.log("📝 Enriched Feedback:", JSON.stringify(enrichedFeedback, null, 2));
 
     const report = await Report.create({
       user: req.user.id,
@@ -144,7 +156,7 @@ export const finalizeInterview = async (req, res, next) => {
       summary: evaluation.summary,
       strengths: evaluation.strengths,
       weaknesses: evaluation.weaknesses,
-      questionWiseFeedback: evaluation.questionWiseFeedback,
+      questionWiseFeedback: enrichedFeedback,
       hiringRecommendation: evaluation.hiringRecommendation,
       roadmap30Days: evaluation.roadmap30Days
     });
