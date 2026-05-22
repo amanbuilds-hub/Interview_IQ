@@ -55,3 +55,29 @@ export const getMyResumes = async (req, res, next) => {
         next(error);
     }
 };
+
+// @desc    Delete a resume
+export const deleteResume = async (req, res, next) => {
+    try {
+        const resume = await Resume.findById(req.params.id);
+
+        if (!resume) {
+            return res.status(404).json({ success: false, message: 'Resume not found' });
+        }
+
+        // Check ownership
+        if (resume.user.toString() !== req.user.id) {
+            return res.status(401).json({ success: false, message: 'Not authorized to delete this resume' });
+        }
+
+        await resume.deleteOne();
+
+        res.status(200).json({
+            success: true,
+            message: 'Resume deleted successfully',
+            data: {}
+        });
+    } catch (error) {
+        next(error);
+    }
+};

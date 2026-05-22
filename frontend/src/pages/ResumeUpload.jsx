@@ -60,6 +60,17 @@ export default function ResumeUpload() {
         }
     };
 
+    const handleDelete = async (id) => {
+        if (!window.confirm('Are you sure you want to delete this resume?')) return;
+        try {
+            await axios.delete(`${API_URL}/resume/${id}`);
+            toast.success('Resume deleted successfully');
+            fetchResumes();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to delete resume');
+        }
+    };
+
     return (
         <MainLayout>
             <header className="mb-12">
@@ -140,7 +151,10 @@ export default function ResumeUpload() {
                                                 </div>
                                             </div>
                                         </div>
-                                        <button className="p-3 rounded-xl bg-white/0 hover:bg-black/20 text-white/20 hover:text-red-400 transition-all opacity-0 group-hover:opacity-100">
+                                        <button 
+                                            onClick={() => handleDelete(resume._id)}
+                                            className="p-3 rounded-xl bg-white/0 hover:bg-black/20 text-white/20 hover:text-red-400 transition-all opacity-0 group-hover:opacity-100"
+                                        >
                                             <Trash2 className="w-5 h-5" />
                                         </button>
                                     </motion.div>
